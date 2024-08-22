@@ -1,0 +1,89 @@
+version: '3'
+services:
+
+  logstash:
+    image: logstash:7.17.23
+    container_name: logstash
+    environment:
+      - ELASTICSEARCH_HOST=http://192.168.31.102:9200
+      - MYSQL_HOST=mysql
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    volumes:
+      - ./logstash-data/config/pipeline:/usr/share/logstash/pipeline
+      - ./logstash-data/config/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ./logstash-data/config/pipelines.yml:/usr/share/logstash/config/pipelines.yml
+      - ./logstash-data/data:/usr/share/logstash/data
+      - ./sample-files:/tmp/log-files/
+      - ./database/mysql-connector-java-8.0.22.jar:/home/mysql-connector-java-8.0.22.jar
+    networks:
+      - logstash
+
+  filebeat:
+    image: elastic/filebeat:7.17.23
+    container_name: filebeat
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    environment:
+      - LOGSTASH_HOST=logstash:5044
+    volumes:
+      - ./beats-data/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./sample-files:/tmp/log-files/
+    networks:
+      - logstash
+
+  mysql:
+    image: mysql:8
+    container_name: mysql
+    environment:
+      - MYSQL_DATABASE=product
+      - MYSQL_TCP_PORT=3306
+      - MYSQL_ALLOW_EMPTY_PASSWORD=true
+    volumes:
+      - ./files/database/product.sql:/docker-entrypoint-initdb.d/product.sql:ro
+    ports:
+      - "3306:3306"
+    networks:
+      - logstash
+
+  heartbeat:
+    image: elastic/heartbeat:7.17.23
+    container_name: heartbeat
+    environment:
+      - LOGSTASH_HOST=logstash:5044
+      - ELASTICSEARCH_HOST=http://192.168.31.102:9200
+    volumes:
+      - ./beats-data/heartbeat/heartbeat.yml:/usr/share/heartbeat/heartbeat.yml:ro
+    networks:
+      - logstash
+
+  apm-server:
+    image: elastic/apm-server:7.17.23
+    container_name: apm-server
+    environment:
+      - ELASTICSEARCH_HOST=http://192.168.31.102:9200
+    volumes:
+      - ./apm-server/apm-server.yml:/usr/share/apm-server/apm-server.yml
+    ports:
+      - "8200:8200"
+      - "6060:6060"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    networks:
+      - logstash
+
+  redis:
+    image: redis
+    container_name: redis
+    ports:
+      - "6379:6379"
+
+networks:
+  logstash:
+    driver: bridge
+
